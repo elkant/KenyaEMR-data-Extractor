@@ -37,13 +37,9 @@ public final class dbConnweb {
         try {
             
          Class.forName("com.mysql.jdbc.Driver").newInstance();
-         //conne = DriverManager.getConnection("jdbc:mysql://localhost:3306/aphiaplus_moi?maxAllowedPacket=1000000000","root", "P@ss4M&E!Fhiimpact!");
-         //conne = DriverManager.getConnection("jdbc:mysql://104.45.29.195:3306/aphiaplus_moi","root", "admin");
-          conne = DriverManager.getConnection("jdbc:mysql://localhost:3306/kenyaemr_datatools","root", "test");
-         
-        //conne = DriverManager.getConnection("jdbc:mysql://kenmysqlserver1.mysql.database.azure.com:3306/aphiaplus_moi?verifyServerCertificate=false&useSSL=true&requireSSL=true","websqladmkn@kenmysqlserver1", "P@$$w9rd4$q12Use1nK#K");
-           
        
+          conne = DriverManager.getConnection("jdbc:mysql://localhost:3306/kenyaemr_datatools","root", "test");
+        
        
        
             //if the saved host name is less than 2 letters long, then thats not a genuine host name
