@@ -41,9 +41,6 @@ public final class dbConnweb {
           conne = DriverManager.getConnection("jdbc:mysql://localhost:3306/kenyaemr_datatools","root", "test");
         
        
-       
-            //if the saved host name is less than 2 letters long, then thats not a genuine host name
-
             URL location = dbConnweb.class.getProtectionDomain().getCodeSource().getLocation();
 
 
