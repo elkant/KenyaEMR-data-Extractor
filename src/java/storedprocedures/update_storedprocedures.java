@@ -44,6 +44,7 @@ public class update_storedprocedures extends HttpServlet {
             Create_sp_anyb_TX_Curr_contacts(conn);
             Create_sp_anyb_Extended_RDQA_All_Patients(conn);
             Create_sp_anyb_RDQA_All_Patients(conn);
+            Create_sp_anyb_Daily_ART(conn);
             
             if(conn.rs!=null){conn.rs.close();}
             if(conn.rs1!=null){conn.rs1.close();}
@@ -426,7 +427,7 @@ public class update_storedprocedures extends HttpServlet {
     String qry="DROP procedure IF EXISTS `kenyaemr_datatools`.`sp_anyb_TX_Curr`;" ;
 
 
-String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Date varchar(255))\n" +
+String qry1="CREATE  PROCEDURE `sp_anyb_TX_Curr`(IN End_Date varchar(255))\n" +
 "BEGIN\n" +
 "\n" +
 "\n" +
@@ -461,7 +462,7 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Dat
 ",Indicator\n" +
 ",regimen_name\n" +
 ", regimen_line\n" +
-" , IFNULL(uzito,'') as 'Weight'\n" +
+" , case when siku_ya_mwisho = SUBSTRING(IFNULL(uzito,'0000-00-00'),1,10) then SUBSTRING(IFNULL(uzito,'0000-00-00'),11,4) else '' end as 'Weight'\n" +
 " ,patient_stable\n" +
 " ,Differentiated_care\n" +
 " ,poptype as Population_Type\n" +
@@ -593,9 +594,9 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Dat
 "/**______Triage______**/\n" +
 "\n" +
 "\n" +
-"Left Join (Select tri.patient_id as tr_pid, weight as uzito From triage tri \n" +
-"      join ( select Max(visit_date) as tr_tk , patient_id from triage group by patient_id\n" +
-"           ) max_tri on max_tri.patient_id=tri.patient_id\n" +
+"Left Join (Select tri.patient_id as tr_pid, Concat(tr_tk,max(weight)) as uzito From triage tri \n" +
+"      join ( select Max(visit_date) as tr_tk , patient_id from hiv_followup where (weight is not null ) and (date(visit_date)<=date(@EndDate)) group by patient_id) \n" +
+"      max_tri on max_tri.patient_id=tri.patient_id\n" +
 "        \n" +
 " group by tri.patient_id) Curuzito On m.patient_id = Curuzito.tr_pid\n" +
 "\n" +
@@ -659,9 +660,10 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Dat
 "\n" +
 "\n" +
 "From hiv_followup gcf  \n" +
-"join ( select patient_id as poptype_patient_id,  \n" +
-"max(visit_date) as pop_type_maxvdate from hiv_followup where date(visit_date)<=date(@EndDate) group by patient_id) max_poptype \n" +
+"left join ( select patient_id as poptype_patient_id,  \n" +
+"max(visit_date) as pop_type_maxvdate from hiv_followup where date(visit_date)<=date(@EndDate) and next_appointment_date is not null group by patient_id ) max_poptype \n" +
 "on max_poptype.poptype_patient_id=poptype_patient_id and pop_type_maxvdate=gcf.visit_date\n" +
+"where  gcf.next_appointment_date is not null\n" +
 "group by gcf.patient_id\n" +
 ") Curpop\n" +
 "\n" +
@@ -687,7 +689,7 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Dat
 "\n" +
 "\n" +
 "\n" +
-"/*________________________Check if patient pregnant in the last 12 months__________________________________________*/\n" +
+"/*________________________Check if patient pregnant in the last 24 months__________________________________________*/\n" +
 "   \n" +
 "Left Join \n" +
 "(\n" +
@@ -695,7 +697,7 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr`(IN End_Dat
 "patient_id as pmtct_patient_id, \n" +
 "'Yes' as prenant_las12months \n" +
 "from hiv_followup where \n" +
-"( visit_date between @startdate and @EndDate) and pregnancy_status IN ('Yes') group by pmtct_patient_id   \n" +
+"( visit_date between @last24monthsdate and @EndDate) and pregnancy_status IN ('Yes') group by pmtct_patient_id   \n" +
 "\n" +
 ") pmtct\n" +
 "\n" +
@@ -1086,4 +1088,288 @@ String qry1="CREATE  PROCEDURE `kenyaemr_datatools`.`sp_anyb_TX_Curr_contacts`(I
     return "Complete";
     }
      
+    
+      
+    public String Create_sp_anyb_Daily_ART(dbConnweb conn){
+    
+        
+    String qry="DROP procedure IF EXISTS `kenyaemr_datatools`.`sp_Daily_ART_Appointments`;" ;
+
+
+String qry1=""
+        + "CREATE  PROCEDURE `kenyaemr_datatools`.`sp_Daily_ART_Appointments`(IN repdate varchar(25))\n" +
+"BEGIN\n" +
+"\n" +
+"\n" +
+"\n" +
+"SET @reporting_date=repdate;\n" +
+"SET @a_year_ago=DATE_FORMAT(DATE_SUB(@reporting_date, INTERVAL 12 MONTH),'%Y-%m-%d');\n" +
+"\n" +
+"(\n" +
+"\n" +
+" select \n" +
+" unique_patient_no as 'CCC_NO'\n" +
+",hf.patient_id  as patient_id\n" +
+"#,next_appointment_date as `Next Appointment Date`\n" +
+",Gender as `Sex`\n" +
+"#,username\n" +
+", if(ifnull(pmtct,'No')='pmtct','Yes','No') as 'Patient Enrolled Into MCH'\n" +
+"\n" +
+",(FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) as 'Current age'\n" +
+" \n" +
+"  , Case \n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) <1 then '<1 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=1 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=4 then '1-4 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=5 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=9 then '5-9 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=10 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=14 then '10-14 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=15 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=19 then '15-19 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=20 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=24 then '20-24 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=25 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=29 then '25-29 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=30 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=34 then '30-34 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=35 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=39 then '35-39 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=40 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=44 then '40-45 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=45 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=49 then '45-49 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=50  then '50+ Yrs'\n" +
+"  else '50+ Yrs'\n" +
+"  end \n" +
+"  as 'Age Bracket'\n" +
+"  ,'Scheduled for Appointment' as indicator\n" +
+"\n" +
+"from\n" +
+"\n" +
+" kenyaemr_datatools.hiv_followup hf \n" +
+" join kenyaemr_datatools.patient_demographics pd on pd.patient_id=hf.patient_id\n" +
+" left join openmrs.users on hf.encounter_provider=users.user_id\n" +
+" \n" +
+" left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=hf.patient_id\n" +
+" \n" +
+" where  \n" +
+" \n" +
+" next_appointment_date=@reporting_date\n" +
+" \n" +
+" )\n" +
+" \n" +
+" UNION ALL\n" +
+" \n" +
+"(\n" +
+"select \n" +
+"unique_patient_no as 'CCC_NO'\n" +
+",hf.patient_id  as patient_id\n" +
+"#,next_appointment_date as `Next Appointment Date`\n" +
+",Gender as `Sex`\n" +
+"#,username\n" +
+", if(ifnull(pmtct,'No')='pmtct','Yes','No') as 'Patient Enrolled Into MCH'\n" +
+" ,(FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) as 'Current age'\n" +
+" \n" +
+" , Case \n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) <1 then '<1 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=1 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=4 then '1-4 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=5 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=9 then '5-9 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=10 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=14 then '10-14 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=15 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=19 then '15-19 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=20 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=24 then '20-24 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=25 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=29 then '25-29 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=30 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=34 then '30-34 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=35 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=39 then '35-39 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=40 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=44 then '40-45 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=45 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=49 then '45-49 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=50  then '50+ Yrs'\n" +
+"  else '50+ Yrs'\n" +
+"  end \n" +
+"  as 'Age Bracket'\n" +
+"  ,'Kept Appointment' as indicator\n" +
+"\n" +
+"\n" +
+"from\n" +
+"\n" +
+" kenyaemr_datatools.hiv_followup hf \n" +
+" join kenyaemr_datatools.patient_demographics pd on pd.patient_id=hf.patient_id\n" +
+" left  join openmrs.users on hf.encounter_provider=users.user_id\n" +
+" \n" +
+"  left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=hf.patient_id\n" +
+" \n" +
+" \n" +
+" where  \n" +
+"   \n" +
+" next_appointment_date=@reporting_date\n" +
+" and  \n" +
+"hf.patient_id in ( \n" +
+"select Patient_id from \n" +
+"kenyaemr_datatools.hiv_followup hf2 \n" +
+"where ( hf2.visit_date=@reporting_date ) \n" +
+"or ( (hf2.visit_date between  @reporting_date and hf.visit_date  ) and  ( hf2.visit_date > hf.next_appointment_date ) and ( next_appointment_date is not null) ) \n" +
+"group by patient_id )\n" +
+"group by hf.patient_id \n" +
+"  \n" +
+" ) \n" +
+" \n" +
+" \n" +
+" UNION ALL\n" +
+" \n" +
+"\n" +
+"(\n" +
+"select \n" +
+"unique_patient_no as 'CCC_NO'\n" +
+",hf.patient_id  as patient_id\n" +
+"#,next_appointment_date as `Next Appointment Date`\n" +
+",Gender as `Sex`\n" +
+"#,username\n" +
+", if(ifnull(pmtct,'No')='pmtct','Yes','No') as 'Patient Enrolled Into MCH'\n" +
+" ,(FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) as 'Current age'\n" +
+" \n" +
+"  , Case \n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) <1 then '<1 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=1 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=4 then '1-4 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=5 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=9 then '5-9 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=10 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=14 then '10-14 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=15 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=19 then '15-19 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=20 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=24 then '20-24 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=25 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=29 then '25-29 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=30 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=34 then '30-34 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=35 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=39 then '35-39 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=40 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=44 then '40-45 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=45 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=49 then '45-49 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=50  then '50+ Yrs'\n" +
+"  else '50+ Yrs'\n" +
+"  end \n" +
+"  as 'Age Bracket'\n" +
+"  ,'UnScheduled Visits' as indicator\n" +
+"\n" +
+"from\n" +
+"\n" +
+" kenyaemr_datatools.hiv_followup hf\n" +
+" \n" +
+" join kenyaemr_datatools.patient_demographics pd1 on pd1.patient_id=hf.patient_id\n" +
+" left join openmrs.users on hf.encounter_provider=users.user_id\n" +
+" \n" +
+"  left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=hf.patient_id\n" +
+" \n" +
+" where  \n" +
+" \n" +
+" ( visit_date=@reporting_date and next_appointment_date is not null ) \n" +
+" and \n" +
+" hf.patient_id \n" +
+" not in ( \n" +
+"select Patient_id from \n" +
+"kenyaemr_datatools.hiv_followup hf3 \n" +
+"where ( hf3.next_appointment_date is not null )  and ( hf3.next_appointment_date=@reporting_date)\n" +
+"group by patient_id \n" +
+"         )\n" +
+"# and ( next_appointment_date is not null )  ( next_appointment_date!=@reporting_date) and\n" +
+" group by hf.patient_id \n" +
+" )\n" +
+" \n" +
+" UNION ALL\n" +
+" (\n" +
+" #______________________________________________Due For VL___________________________________________________\n" +
+" \n" +
+" select \n" +
+" \n" +
+" \n" +
+" unique_patient_no as 'CCC_NO'\n" +
+",o.person_id  as patient_id\n" +
+"#,next_appointment_date as `Next Appointment Date`\n" +
+",Gender as `Sex`\n" +
+"#,username\n" +
+", if(ifnull(pmtct,'No')='pmtct','Yes','No') as 'Patient Enrolled Into MCH'\n" +
+" ,(FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) as 'Current age'\n" +
+"  , Case \n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) <1 then '<1 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=1 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=4 then '1-4 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=5 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=9 then '5-9 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=10 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=14 then '10-14 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=15 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=19 then '15-19 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=20 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=24 then '20-24 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=25 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=29 then '25-29 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=30 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=34 then '30-34 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=35 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=39 then '35-39 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=40 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=44 then '40-45 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=45 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=49 then '45-49 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=50  then '50+ Yrs'\n" +
+"  else '50+ Yrs'\n" +
+"  end \n" +
+"  as 'Age Bracket'\n" +
+"   , 'Due For VL' as indicator\n" +
+" From openmrs.obs o\n" +
+" join kenyaemr_datatools.patient_demographics pd1 on pd1.patient_id=o.person_id\n" +
+" left join openmrs.users on o.creator=users.user_id\n" +
+"  left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=o.person_id\n" +
+" \n" +
+" \n" +
+" where o.concept_id in ('856') and  Date_FORMAT(obs_datetime,'%Y-%m-%d')=@a_year_ago\n" +
+" \n" +
+" )\n" +
+" \n" +
+" \n" +
+"  UNION ALL\n" +
+" (\n" +
+" #______________________________________________Eligible and Done VL___________________________________________________\n" +
+" \n" +
+" select \n" +
+" \n" +
+" \n" +
+" unique_patient_no as 'CCC_NO'\n" +
+",o.person_id  as patient_id\n" +
+"#,next_appointment_date as `Next Appointment Date`\n" +
+",Gender as `Sex`\n" +
+"#,username\n" +
+", if(ifnull(pmtct,'No')='pmtct','Yes','No') as 'Patient Enrolled Into MCH'\n" +
+" ,(FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) as 'Current age'\n" +
+"  , Case \n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) <1 then '<1 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=1 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=4 then '1-4 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=5 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=9 then '5-9 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=10 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=14 then '10-14 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=15 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=19 then '15-19 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=20 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=24 then '20-24 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=25 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=29 then '25-29 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=30 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=34 then '30-34 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=35 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=39 then '35-39 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=40 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=44 then '40-45 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=45 and (FLOOR(IFNULL(DATEDIFF(substring(NOW(),1,10), DOB)/365,0))) <=49 then '45-49 Yrs'\n" +
+"  when (FLOOR(IFNULL(DATEDIFF(substring(@reporting_date,1,10), DOB)/365,0))) >=50  then '50+ Yrs'\n" +
+"  else '50+ Yrs'\n" +
+"  end \n" +
+"  as 'Age Bracket'\n" +
+"   , 'Eligible and Done VL' as indicator\n" +
+" From openmrs.obs o\n" +
+" join kenyaemr_datatools.patient_demographics pd1 on pd1.patient_id=o.person_id\n" +
+" left join openmrs.users on o.creator=users.user_id\n" +
+"  left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=o.person_id\n" +
+" \n" +
+" where o.concept_id in ('856') and  Date_FORMAT(obs_datetime,'%Y-%m-%d')=@a_year_ago\n" +
+" \n" +
+" and o.person_id in \n" +
+" (\n" +
+" select Patient_id from \n" +
+"openmrs.obs hf2 \n" +
+"where ( Date_FORMAT(hf2.obs_datetime,'%Y-%m-%d')=@reporting_date ) \n" +
+"or ( (  Date_FORMAT(hf2.obs_datetime,'%Y-%m-%d') between    Date_FORMAT(o.obs_datetime,'%Y-%m-%d') and @reporting_date  ) and  ( Date_FORMAT(hf2.obs_datetime,'%Y-%m-%d') > Date_FORMAT(o.obs_datetime,'%Y-%m-%d') ) ) \n" +
+"group by patient_id \n" +
+" \n" +
+" \n" +
+" )\n" +
+" \n" +
+" )\n" +
+" \n" +
+" \n" +
+" ;\n" +
+"\n" +
+"END"
+        + "";
+    
+        try {
+            conn.st.executeUpdate(qry);
+            conn.st.executeUpdate(qry1);
+            System.out.println("Daily ART Query Created successfully");
+        } catch (SQLException ex) 
+        {
+            Logger.getLogger(update_storedprocedures.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error Creating SP");
+        }
+    
+    return "Complete";
+    }
+     
+    
 }

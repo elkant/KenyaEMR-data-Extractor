@@ -32,20 +32,21 @@ public class loadQueryHistory extends HttpServlet {
 IdGenerator ig= new IdGenerator();
             
 String month=""+ig.LastMonthDate();
+String tday=""+ig.toDay();
             
 String getlist="[{\"qry\":\"error\",\"queryname\":\"No Data\",\"qname\":\"No_Data_\"}]";
             
 
 
-String checksp="SHOW PROCEDURE STATUS WHERE NAME like '%sp_anyb_TX_Curr_contacts%' and Db='KenyaEMR_datatools';";
+String checksp="SHOW PROCEDURE STATUS WHERE NAME like '%sp_Daily_ART_Appointments%' and Db='KenyaEMR_datatools';";
 
             dbConnweb conn= new dbConnweb();
             
             conn.rs=conn.st.executeQuery(checksp);
             
             if(conn.rs.next()){
-                
-             getlist="[{\"qry\":\"call sp_anyb_TX_Curr('"+month+"');\",\"queryname\":\"Current ON ART with VL Results\",\"qname\":\"VL_KenyaEMR_\"},{\"qry\":\"call sp_anyb_Extended_RDQA_All_Patients();\",\"queryname\":\"Latest Greencard\",\"qname\":\"GreenCard_\"},{\"qry\":\"call sp_anyb_RDQA_All_Patients();\",\"queryname\":\"RDQA All Patients\",\"qname\":\"RDQA\"}]";
+                //sp_Daily_ART_Appointments
+             getlist="[{\"qry\":\"call sp_Daily_ART_Appointments('"+tday+"');\",\"queryname\":\"Daily Appointment Keeping\",\"qname\":\"Daily_Appointment_\"},{\"qry\":\"call sp_anyb_TX_Curr('"+month+"');\",\"queryname\":\"Current ON ART with VL Results\",\"qname\":\"VL_KenyaEMR_\"},{\"qry\":\"call sp_anyb_Extended_RDQA_All_Patients();\",\"queryname\":\"Latest Greencard\",\"qname\":\"GreenCard_\"},{\"qry\":\"call sp_anyb_RDQA_All_Patients();\",\"queryname\":\"RDQA All Patients\",\"qname\":\"RDQA\"}]";
        
             
             }

@@ -70,7 +70,13 @@ now=new Timestamp(date.getTime());
   if(date>=10){
     date2=""+date;
 }
-   String full_date=year+"-"+month+"-"+date2;     
+  String mn=""+month;
+         if(month<10)
+         {
+    mn="0"+month;
+}
+  
+   String full_date=year+"-"+mn+"-"+date2;     
    return full_date;
     }
        
