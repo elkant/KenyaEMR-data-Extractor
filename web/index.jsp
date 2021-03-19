@@ -85,7 +85,7 @@ textarea {
       <div class="navbar-inner">
          <div class="container-fluid">
             <!-- BEGIN LOGO -->
-            <h3 style="text-align:center;font-size: 10px;color:white;padding-bottom:16px ;font-weight: bolder;">KenyaEMR Data Extractor Version 1.2.0</h3><br/>
+            <h3 style="text-align:center;font-size: 10px;color:white;padding-bottom:16px ;font-weight: bolder;">KenyaEMR Data Extractor Version 1.3.0</h3><br/>
             
             <!-- END LOGO -->
             <!-- BEGIN RESPONSIVE MENU TOGGLER -->

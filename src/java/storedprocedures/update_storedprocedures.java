@@ -1142,17 +1142,17 @@ String qry1=""
 " left join openmrs.users on hf.encounter_provider=users.user_id\n" +
 " \n" +
 " left join ( select mch.patient_id as mch_pid,'pmtct' from kenyaemr_datatools.mch_enrollment mch where (discontinuation_reason is null or discontinuation_reason='' ) group by mch.patient_id ) mc on mc.mch_pid=hf.patient_id\n" +
-" \n" +
-" where  \n" +
-" \n" +
-" next_appointment_date=@reporting_date\n" +
-" \n" +
+" " +
+" where  " +
+" " +
+" next_appointment_date=@reporting_date " +
+"   group by unique_patient_no " +
 " )\n" +
 " \n" +
 " UNION ALL\n" +
-" \n" +
-"(\n" +
-"select \n" +
+"  " +
+"( " +
+"select " +
 "unique_patient_no as 'CCC_NO'\n" +
 ",hf.patient_id  as patient_id\n" +
 "#,next_appointment_date as `Next Appointment Date`\n" +
@@ -1197,7 +1197,7 @@ String qry1=""
 "select Patient_id from \n" +
 "kenyaemr_datatools.hiv_followup hf2 \n" +
 "where ( hf2.visit_date=@reporting_date ) \n" +
-"or ( (hf2.visit_date between  @reporting_date and hf.visit_date  ) and  ( hf2.visit_date > hf.next_appointment_date ) and ( next_appointment_date is not null) ) \n" +
+"or ( (hf2.visit_date between  @reporting_date and hf.visit_date  ) and  ( hf2.visit_date > hf.visit_date ) and ( next_appointment_date is not null) ) \n" +
 "group by patient_id )\n" +
 "group by hf.patient_id \n" +
 "  \n" +
